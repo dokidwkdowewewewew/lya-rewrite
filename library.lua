@@ -12,14 +12,18 @@
         supports syn, protectgui, and gethui protection layers
 --]]
 
+-- safe executor global wrappers
+--// cloneref prevents cache-based instance detection, falls back to identity if unavailable
+local _cloneref: ( Instance ) -> Instance = cloneref or function( inst ) return inst end
+
 -- services
-local input_service  = cloneref( game:GetService( "UserInputService" ) )
-local text_service   = cloneref( game:GetService( "TextService" ) )
-local core_gui       = cloneref( game:GetService( "CoreGui" ) )
-local teams_service  = cloneref( game:GetService( "Teams" ) )
-local players        = cloneref( game:GetService( "Players" ) )
-local run_service    = cloneref( game:GetService( "RunService" ) )
-local tween_service  = cloneref( game:GetService( "TweenService" ) )
+local input_service  = _cloneref( game:GetService( "UserInputService" ) )
+local text_service   = _cloneref( game:GetService( "TextService" ) )
+local core_gui       = _cloneref( game:GetService( "CoreGui" ) )
+local teams_service  = _cloneref( game:GetService( "Teams" ) )
+local players        = _cloneref( game:GetService( "Players" ) )
+local run_service    = _cloneref( game:GetService( "RunService" ) )
+local tween_service  = _cloneref( game:GetService( "TweenService" ) )
 
 -- locals
 local render_stepped = run_service.RenderStepped --// main render signal
@@ -35,7 +39,7 @@ type registry_entry = {
 }
 
 -- protection layer
---// tries gethui (potassium/unc), then syn, then fallback to coregui
+--// pcall every executor-specific global so a missing api never crashes the lib
 local function build_screen_gui(): ScreenGui
     local gui = Instance.new( "ScreenGui" )
     gui.ZIndexBehavior   = Enum.ZIndexBehavior.Global
@@ -43,20 +47,35 @@ local function build_screen_gui(): ScreenGui
     gui.DisplayOrder     = 999
     gui.IgnoreGuiInset   = true
 
-    if gethui then
-        -- potassium api: gethui() returns a protected hidden container
-        -- gui objects here are invisible to common detection
-        gui.Parent = gethui()
-    elseif syn and syn.protect_gui then
-        syn.protect_gui( gui )
-        gui.Parent = core_gui
-    elseif protectgui then
-        protectgui( gui ) --// unc / other executors
-        gui.Parent = core_gui
-    else
-        gui.Parent = core_gui
+    --// potassium/unc: gethui returns a hidden protected container
+    if pcall( function()
+        local hui = (gethui :: any)()
+        gui.Parent = hui
+    end ) and gui.Parent then
+        return gui
     end
 
+    --// synapse x
+    if pcall( function()
+        local s = (syn :: any)
+        if s and s.protect_gui then
+            s.protect_gui( gui )
+            gui.Parent = core_gui
+        end
+    end ) and gui.Parent then
+        return gui
+    end
+
+    --// unc / generic protect_gui
+    if pcall( function()
+        local pg = (protectgui :: any)
+        pg( gui )
+        gui.Parent = core_gui
+    end ) and gui.Parent then
+        return gui
+    end
+
+    gui.Parent = core_gui
     return gui
 end
 
@@ -66,8 +85,10 @@ local screen_gui = build_screen_gui()
 local toggles = {}
 local options = {}
 
-getgenv().Toggles = toggles
-getgenv().Options = options
+--// getgenv may not exist on all executors, fall back to _G
+local _env: { [string]: any } = pcall( getgenv ) and getgenv() or _G
+_env.Toggles = toggles
+_env.Options  = options
 
 -- library table
 local library = {
@@ -3249,5 +3270,5 @@ function library:create_window( config: { [string]: any } )
     return window
 end
 
-getgenv().Library = library
+_env.Library = library
 return library
