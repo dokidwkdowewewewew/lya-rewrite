@@ -28,13 +28,7 @@ local render_stepped = run_service.RenderStepped --// main render signal
 local local_player = players.LocalPlayer
 local mouse = local_player:GetMouse()
 
--- types
-
-
- instance : Instance;
- properties : color_map;
- idx : number;
-}
+-- (types removed for compatibility)
 
 -- protection layer
 --// pcall every executor-specific global so a missing api never crashes the lib
